@@ -1,10 +1,10 @@
 # Jarvis for Mac
 
-A Mac window onto the Jarvis that runs on your PC. The PC does everything: the conversation, memory, cameras and connected apps. This app adds what a web page can't do on a Mac:
+The full Jarvis window on your Mac (settings, cameras, history and all), from the Jarvis that runs on your PC. The PC does everything: the conversation, memory, cameras and connected apps. This app adds what a web page can't do on a Mac:
 
 - its own window, which stays in the menu bar when you close it;
 - a keyboard shortcut from anywhere (⌃⌥J), then just say what you need;
-- **Hands-free**: say "Jarvis, …" and it hears you, even behind other windows. Each phrase goes to Whisper on your PC, and only one that starts with "Jarvis" is acted on;
+- the "Jarvis" wake word, as on the PC, and replies spoken on the Mac for what you ask there;
 - Mac notifications for camera alerts, reminders and approvals while the window is behind;
 - opening at login, from the menu-bar icon.
 
@@ -13,7 +13,8 @@ A Mac window onto the Jarvis that runs on your PC. The PC does everything: the c
 1. Install [Tailscale](https://tailscale.com/download/mac) and sign in with the same account as the PC.
 2. Download the latest `Jarvis-x.y.z.dmg` from [Releases](../../releases), open it, and drag Jarvis into Applications.
 3. Open Jarvis. macOS says it can't check the app, because it isn't signed with a paid Apple developer certificate. Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Jarvis. This happens once.
-4. Paste your PC's Jarvis address (the part ending in `.ts.net`, from Jarvis's phone page) and click **Connect**. Allow the microphone when asked.
+4. Paste your PC's Jarvis address (the part ending in `.ts.net`, from Jarvis's phone page) and click **Connect**.
+5. Jarvis shows a six-digit code on the PC and sends it to your phone. Type it on the Mac and click **Pair this Mac** (once only). Allow the microphone when asked.
 
 New versions show up in the menu-bar icon's menu as "Download Jarvis x.y.z". They're rare, because everything Jarvis does comes from the PC.
 

@@ -1,9 +1,9 @@
-// Jarvis for the Mac: a window onto the Jarvis running on the PC, reached through Tailscale.
+// Jarvis for the Mac: the full Jarvis window, from the Jarvis running on the PC, through Tailscale.
 // The PC does everything (the conversation, memory, cameras, connected apps); this app only
 // owns what a web page can't do on a Mac: its own window that stays in the menu bar when
 // closed, a keyboard shortcut from anywhere, starting at login, the microphone permission,
 // and noticing when a newer version of itself is out.
-const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, net, session, shell, systemPreferences } = require('electron')
+const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -15,7 +15,7 @@ const RELEASES = 'haydenesler/jarvis-mac' // where new versions of this app are 
 // JARVIS_MAC_DATA keeps a test copy's settings apart (and out of the way of a real one).
 if (process.env.JARVIS_MAC_DATA) app.setPath('userData', process.env.JARVIS_MAC_DATA)
 const PREFS_FILE = path.join(app.getPath('userData'), 'prefs.json')
-let prefs = { address: '', hotkey: 'Control+Option+J', updateSeen: '' }
+let prefs = { address: '', deskKey: '', hotkey: 'Control+Option+J' }
 try {
   prefs = { ...prefs, ...JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8')) }
 } catch {}
@@ -24,6 +24,19 @@ const savePrefs = () => {
     fs.mkdirSync(path.dirname(PREFS_FILE), { recursive: true })
     fs.writeFileSync(PREFS_FILE, JSON.stringify(prefs, null, 2))
   } catch {}
+}
+
+// The key the PC gave this Mac when it paired, kept in the Mac's keychain (safeStorage).
+function deskKey() {
+  try {
+    return prefs.deskKey ? safeStorage.decryptString(Buffer.from(prefs.deskKey, 'base64')) : ''
+  } catch {
+    return ''
+  }
+}
+function setDeskKey(key) {
+  prefs.deskKey = key ? safeStorage.encryptString(key).toString('base64') : ''
+  savePrefs()
 }
 
 const origin = () => `https://${prefs.address}`
@@ -65,10 +78,10 @@ function openExternal(url) {
 
 function createMain() {
   main = new BrowserWindow({
-    width: 470,
-    height: 860,
-    minWidth: 380,
-    minHeight: 560,
+    width: 1180,
+    height: 820,
+    minWidth: 420,
+    minHeight: 520,
     show: false,
     title: NAME,
     backgroundColor: '#0a0a0f',
@@ -106,14 +119,15 @@ function createMain() {
     event.preventDefault()
     main.hide()
   })
-  if (prefs.address) loadJarvis()
+  if (prefs.address && deskKey()) loadJarvis()
   else main.loadFile(path.join(__dirname, 'setup.html'))
 }
 
 function loadJarvis() {
   clearTimeout(retry)
   if (!main || !prefs.address) return
-  main.loadURL(`${origin()}/phone`)
+  if (!deskKey()) return main.loadFile(path.join(__dirname, 'setup.html'))
+  main.loadURL(`${origin()}/`)
 }
 
 function showMain() {
@@ -141,12 +155,36 @@ ipcMain.handle('setup:check', async (event, text) => {
   } catch {
     return { ok: false, error: `Couldn’t reach Jarvis at ${address}. Check the PC is on, and that Tailscale is open and signed in on this Mac with the same account.` }
   }
+  if (address !== prefs.address) setDeskKey('')
   prefs.address = address
   savePrefs()
-  setTimeout(loadJarvis, 300)
-  return { ok: true, address }
+  return askForCode()
 })
-ipcMain.handle('setup:current', (event) => (fromMain(event) ? prefs.address : ''))
+// Pairing: the PC shows a six-digit code on its window and the phone; typed here, it gives
+// this Mac the key for the full window.
+async function pair(body) {
+  try {
+    const res = await net.fetch(`${origin()}/desk/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000) })
+    const reply = await res.json().catch(() => ({}))
+    return res.ok ? reply : { error: reply.error ?? `The PC answered ${res.status}.` }
+  } catch {
+    return { error: 'Couldn’t reach the PC. Check it’s on and Tailscale is connected.' }
+  }
+}
+async function askForCode() {
+  const reply = await pair({})
+  return reply.ok ? { ok: true, address: prefs.address, step: 'code' } : { ok: false, error: reply.error }
+}
+ipcMain.handle('setup:new-code', (event) => (fromMain(event) ? askForCode() : { ok: false }))
+ipcMain.handle('setup:code', async (event, code) => {
+  if (!fromMain(event)) return { ok: false }
+  const reply = await pair({ code: String(code ?? '') })
+  if (!reply.key) return { ok: false, error: reply.error ?? 'That didn’t work. Ask for a new code.' }
+  setDeskKey(reply.key)
+  setTimeout(loadJarvis, 300)
+  return { ok: true }
+})
+ipcMain.handle('setup:current', (event) => (fromMain(event) ? { address: prefs.address, paired: Boolean(deskKey()) } : {}))
 
 // ---- menu bar, shortcut, start at login ----
 
@@ -232,6 +270,11 @@ app.whenReady().then(async () => {
     callback((mic || permission === 'notifications') && ours(details.requestingUrl))
   })
   session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) => (permission === 'media' || permission === 'notifications') && ours(requestingOrigin))
+  // Every request to the PC carries this Mac's key, so the PC gives it the full window.
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*/*', 'wss://*/*'] }, (details, callback) => {
+    const key = ours(details.url.replace(/^wss:/, 'https:')) ? deskKey() : ''
+    callback({ requestHeaders: key ? { ...details.requestHeaders, 'X-Jarvis-Desk': key } : details.requestHeaders })
+  })
   // macOS asks once whether this app may use the microphone.
   if (process.platform === 'darwin') systemPreferences.askForMediaAccess('microphone').catch(() => {})
 

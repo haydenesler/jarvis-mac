@@ -1,5 +1,6 @@
-// What the pages in the Mac app may ask of it. Jarvis's page (phone.js) sees window.jarvisMac
-// and turns on its Mac extras; the set-up and offline pages use the rest.
+// What the pages in the Mac app may ask of it. Jarvis's window (app.js) sees window.jarvisMac:
+// what's asked here is labelled "mac" and spoken here, and the shortcut listens. The set-up
+// and offline pages use the rest.
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('jarvisMac', {
@@ -9,4 +10,6 @@ contextBridge.exposeInMainWorld('jarvisMac', {
   changeAddress: () => ipcRenderer.send('change-address'),
   check: (address) => ipcRenderer.invoke('setup:check', String(address ?? '')),
   current: () => ipcRenderer.invoke('setup:current'),
+  sendCode: (code) => ipcRenderer.invoke('setup:code', String(code ?? '')),
+  newCode: () => ipcRenderer.invoke('setup:new-code'),
 })
