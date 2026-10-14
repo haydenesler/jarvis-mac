@@ -7,6 +7,7 @@ The full Jarvis window on your Mac (settings, cameras, history and all), from th
 - the "Jarvis" wake word, as on the PC, and replies spoken on the Mac for what you ask there;
 - Mac notifications for camera alerts, reminders and approvals while the window is behind;
 - opening at login, from the menu-bar icon.
+- **Your PC** (top bar): your PC's screen, driven with the Mac's mouse, trackpad and keyboard. ⌘ works as Ctrl, two-finger scrolling scrolls, and there are buttons for Start, Switch window, Paste from Mac, the other monitor and full screen. It needs Settings → Remote switched on; pressing Esc twice at the PC stops it.
 
 ## Install
 

@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('jarvisMac', {
   current: () => ipcRenderer.invoke('setup:current'),
   sendCode: (code) => ipcRenderer.invoke('setup:code', String(code ?? '')),
   newCode: () => ipcRenderer.invoke('setup:new-code'),
+  // "Your PC" (pcview.js): ⌘W, ⌘Q and the like go to the PC while its screen is up; the Mac's clipboard text.
+  remoteKeys: (on) => ipcRenderer.send('remote-keys', Boolean(on)),
+  clipboardText: () => ipcRenderer.invoke('clipboard-text'),
 })

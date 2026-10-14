@@ -3,7 +3,7 @@
 // owns what a web page can't do on a Mac: its own window that stays in the menu bar when
 // closed, a keyboard shortcut from anywhere, starting at login, the microphone permission,
 // and noticing when a newer version of itself is out.
-const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences } = require('electron')
+const { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, ipcMain, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -143,6 +143,9 @@ const fromMain = (event) => event.sender === main?.webContents
 ipcMain.on('show', (event) => fromMain(event) && showMain())
 ipcMain.on('retry', (event) => fromMain(event) && loadJarvis())
 ipcMain.on('change-address', (event) => fromMain(event) && main.loadFile(path.join(__dirname, 'setup.html')))
+// "Your PC": while the PC's screen is up, the Mac's menu shortcuts (⌘W, ⌘Q, ⌘H, ⌘R) go to the PC.
+ipcMain.on('remote-keys', (event, on) => fromMain(event) && main.webContents.setIgnoreMenuShortcuts(Boolean(on)))
+ipcMain.handle('clipboard-text', (event) => (fromMain(event) && ours(main.webContents.getURL()) ? clipboard.readText().slice(0, 4000) : ''))
 // The set-up page: check the address answers as Jarvis before keeping it.
 ipcMain.handle('setup:check', async (event, text) => {
   if (!fromMain(event)) return { ok: false }
