@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Jarvis</title>
+<style>
+  :root { color-scheme: dark; --paper: #0a0a0f; --ink: #ededf2; --muted: #9495a4; --rule: #2a2a35; --surface: #15151d; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  main { display: flex; flex-direction: column; justify-content: center; gap: 18px; min-height: 100%; box-sizing: border-box; padding: 32px 28px; max-width: 420px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  p { margin: 0; color: var(--muted); }
+  label { display: grid; gap: 6px; font-weight: 600; }
+  input { padding: 12px 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; }
+  input:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+  button { align-self: start; padding: 11px 20px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); font: inherit; font-weight: 600; }
+  button:disabled { opacity: 0.5; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .problem { color: #ffb4a8; }
+  ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  li + li { margin-top: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect to Jarvis on your PC</h1>
+  <p>This Mac uses the Jarvis that runs on your PC, through Tailscale. Your conversations, memory and cameras stay on the PC.</p>
+  <ol>
+    <li>Open Tailscale on this Mac and sign in with the same account as the PC.</li>
+    <li>On your phone or PC, open Jarvis’s phone page and copy its address (the part ending in <b>.ts.net</b>).</li>
+  </ol>
+  <form id="form">
+    <label>Your PC’s Jarvis address
+      <input id="address" type="text" placeholder="yourpc.yourname.ts.net" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+    </label>
+  </form>
+  <p class="problem" id="problem" role="alert"></p>
+  <button type="submit" form="form" id="go">Connect</button>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id)
+  window.jarvisMac.current().then((address) => { if (address) $('address').value = address })
+  $('form').addEventListener('submit', async (event) => {
+    event.preventDefault()
+    $('go').disabled = true
+    $('go').textContent = 'Checking…'
+    $('problem').textContent = ''
+    const result = await window.jarvisMac.check($('address').value)
+    if (result.ok) {
+      $('go').textContent = 'Connected'
+      return
+    }
+    $('problem').textContent = result.error
+    $('go').disabled = false
+    $('go').textContent = 'Connect'
+  })
+</script>
+</body>
+</html>

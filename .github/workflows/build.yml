@@ -1,0 +1,43 @@
+# Builds Jarvis for the Mac on GitHub's Macs and publishes it as a release.
+# A version tag (v1.0.1) builds and publishes; "Run workflow" builds only (the .dmg is kept
+# with the run, under Artifacts).
+name: Build the Mac app
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the .dmg (Apple silicon and Intel)
+        run: npx electron-builder --mac dmg --universal --publish never
+
+      - name: Keep the .dmg with this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-mac
+          path: dist/*.dmg
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg \
+            --title "Jarvis for Mac ${GITHUB_REF_NAME#v}" \
+            --notes "Open the .dmg and drag Jarvis into Applications. The first time, macOS will say it can't check the app: open System Settings, Privacy & Security, and click Open Anyway next to Jarvis."

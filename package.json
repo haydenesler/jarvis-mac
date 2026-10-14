@@ -1,0 +1,53 @@
+{
+  "name": "jarvis-mac",
+  "productName": "Jarvis",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jarvis for the Mac: a window onto the Jarvis running on your PC, through Tailscale.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac dmg --universal --publish never"
+  },
+  "build": {
+    "appId": "local.jarvis.mac",
+    "productName": "Jarvis",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "setup.html",
+      "offline.html",
+      "assets/trayTemplate.png",
+      "assets/trayTemplate@2x.png",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Jarvis listens when you talk to it, and for its name when hands-free is on. What you say goes to Jarvis on your own PC."
+      }
+    },
+    "dmg": {
+      "title": "Jarvis",
+      "artifactName": "Jarvis-${version}.dmg"
+    }
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  }
+}
