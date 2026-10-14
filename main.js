@@ -3,7 +3,9 @@
 // owns what a web page can't do on a Mac: its own window that stays in the menu bar when
 // closed, a keyboard shortcut from anywhere, starting at login, the microphone permission,
 // and noticing when a newer version of itself is out.
-const { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, ipcMain, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences } = require('electron')
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, globalShortcut, ipcMain, nativeImage, nativeTheme, net, safeStorage, session, shell, systemPreferences } = require('electron')
+const { execFile, spawn } = require('node:child_process')
+const { createHash, verify } = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -192,7 +194,8 @@ ipcMain.handle('setup:current', (event) => (fromMain(event) ? { address: prefs.a
 // ---- menu bar, shortcut, start at login ----
 
 let tray = null
-let update = null // { version, url } when a newer version is out
+let update = null // { version, url } when a newer version is out but can't be installed here
+let staged = null // { version, app } once a newer version is downloaded, checked and waiting
 
 function talkNow() {
   // The page listens for one request, no name needed (see phone.js, "on the Mac").
@@ -207,7 +210,7 @@ function buildTrayMenu() {
     Menu.buildFromTemplate([
       { label: `Open ${NAME}`, click: showMain },
       { label: `Talk now    ${shortcut}`, click: talkNow },
-      ...(update ? [{ type: 'separator' }, { label: `Download ${NAME} ${update.version}`, click: () => openExternal(update.url) }] : []),
+      ...(staged ? [{ type: 'separator' }, { label: `Restart to update to ${staged.version}`, click: () => installUpdate(true) }] : update ? [{ type: 'separator' }, { label: `Download ${NAME} ${update.version}`, click: () => openExternal(update.url) }] : []),
       { type: 'separator' },
       { label: 'Open at login', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, enabled: app.isPackaged, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
       { label: 'Change the PC’s address…', click: () => (showMain(), main.loadFile(path.join(__dirname, 'setup.html'))) },
@@ -229,24 +232,112 @@ function buildAppMenu() {
   )
 }
 
-// ---- a newer version ----
-// This app can't update itself without an Apple developer certificate, but it hardly needs
-// to: everything Jarvis does comes from the PC. Once a day it looks for a newer version of
-// this window and offers it in the menu bar.
-async function checkForUpdate() {
+// ---- updates ----
+// Each release (.github/workflows/build.yml) carries latest.json: the update zip's name, size and
+// SHA-256, signed with the build's Ed25519 key, a GitHub secret. Before trusting anything this app
+// checks that signature against the public key below, then downloads the zip and checks its size
+// and hash, unpacks it with ditto, and checks the new app's code signature is valid and made with
+// the same certificate as this one. Only then is it kept, to swap in when Jarvis quits (or at
+// 3 am, or "Restart to update" in the menu bar). Never an older version, never an unsigned one.
+// Where it can't replace itself (run from the .dmg, or a folder it can't write to), it offers
+// the download instead.
+const UPDATE_KEY = 'MCowBQYDK2VwAyEApj13SmpNUDCszfG5pJbeedHF+rdP++L/RuoZ7u3WdL0='
+const CERT_SHA1 = '7d3bd11d5d5b3c3965fdc56257deedf9980a73c5' // Jarvis for Mac (self-signed)
+
+const run = (command, args) => new Promise((resolve, reject) => execFile(command, args, { timeout: 120_000 }, (error, stdout) => (error ? reject(error) : resolve(stdout))))
+const newer = (a, b) => {
+  const [x, y] = [a, b].map((v) => v.split('.').map(Number))
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0)
+  return false
+}
+/** This app's own bundle (/Applications/Jarvis.app), if it can replace itself there. */
+function ownBundle() {
+  if (!app.isPackaged || process.platform !== 'darwin') return null
+  const bundle = path.resolve(process.execPath, '..', '..', '..')
+  if (!bundle.endsWith('.app') || bundle.startsWith('/Volumes/')) return null
   try {
-    const res = await net.fetch(`https://api.github.com/repos/${RELEASES}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
+    fs.accessSync(path.dirname(bundle), fs.constants.W_OK)
+    fs.accessSync(bundle, fs.constants.W_OK)
+    return bundle
+  } catch {
+    return null
+  }
+}
+/** The SHA-1 of the certificate an app was signed with (its leaf). */
+async function signedWith(bundle, dir) {
+  await run('/usr/bin/codesign', ['--display', `--extract-certificates=${path.join(dir, 'cert')}`, bundle])
+  return createHash('sha1').update(fs.readFileSync(path.join(dir, 'cert0'))).digest('hex')
+}
+
+let checking = false
+async function checkForUpdate() {
+  if (checking || staged) return
+  checking = true
+  const work = path.join(app.getPath('temp'), 'jarvis-update')
+  try {
+    const res = await net.fetch(`https://github.com/${RELEASES}/releases/latest/download/latest.json`, { signal: AbortSignal.timeout(20_000) })
     if (!res.ok) return
-    const release = await res.json()
-    const version = String(release.tag_name ?? '').replace(/^v/, '')
-    const newer = (a, b) => {
-      const [x, y] = [a, b].map((v) => v.split('.').map(Number))
-      for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0)
-      return false
+    const latest = await res.json()
+    const { version, zip, size, sha256, signature } = latest
+    if (!/^\d+\.\d+\.\d+$/.test(version ?? '') || !newer(version, app.getVersion())) return
+    const message = `jarvis-mac|${version}|${zip}|${sha256}|${size}`
+    const genuine = verify(null, Buffer.from(message), { key: Buffer.from(UPDATE_KEY, 'base64'), format: 'der', type: 'spki' }, Buffer.from(String(signature), 'base64'))
+    if (!genuine || !/^Jarvis-mac-[\d.]+\.zip$/.test(zip) || !/^[0-9a-f]{64}$/.test(sha256)) return console.error('update: latest.json failed its signature check; ignored')
+    const page = `https://github.com/${RELEASES}/releases/tag/v${version}`
+    if (!ownBundle()) {
+      update = { version, url: page }
+      return buildTrayMenu()
     }
-    if (!/^\d+\.\d+\.\d+$/.test(version) || !newer(version, app.getVersion())) return
-    update = { version, url: release.html_url }
+    const download = await net.fetch(`https://github.com/${RELEASES}/releases/download/v${version}/${zip}`, { signal: AbortSignal.timeout(15 * 60_000) })
+    if (!download.ok) return
+    const bytes = Buffer.from(await download.arrayBuffer())
+    if (bytes.length !== size || createHash('sha256').update(bytes).digest('hex') !== sha256) return console.error('update: the download didn’t match latest.json; ignored')
+    fs.rmSync(work, { recursive: true, force: true })
+    fs.mkdirSync(work, { recursive: true })
+    fs.writeFileSync(path.join(work, 'update.zip'), bytes)
+    await run('/usr/bin/ditto', ['-x', '-k', path.join(work, 'update.zip'), path.join(work, 'unpacked')])
+    const next = path.join(work, 'unpacked', 'Jarvis.app')
+    await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', next])
+    if ((await signedWith(next, work)) !== CERT_SHA1) return console.error('update: signed with a different certificate; ignored')
+    staged = { version, app: next }
     buildTrayMenu()
+    notify(`${NAME} ${version} is ready. It installs when you quit ${NAME}, or overnight.`)
+    // Overnight, if it hasn't been quit by then.
+    const at = new Date()
+    at.setHours(3, 0, 0, 0)
+    if (at <= new Date()) at.setDate(at.getDate() + 1)
+    setTimeout(() => installUpdate(true), at - Date.now())
+  } catch (error) {
+    console.error('update check failed:', error.message)
+  } finally {
+    checking = false
+  }
+}
+
+/**
+ * Swaps the checked new version in once this app has quit, using a short shell script that waits
+ * for it to exit, keeps the old copy until the new one is in place (and puts it back if anything
+ * fails), and opens Jarvis again when asked to.
+ */
+let installing = false
+function installUpdate(relaunch) {
+  const bundle = ownBundle()
+  if (!staged || !bundle || installing) return
+  installing = true
+  const script = [
+    'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done',
+    'rm -rf "$3.old"',
+    'if mv "$3" "$3.old" && /usr/bin/ditto "$2" "$3"; then rm -rf "$3.old"; else rm -rf "$3"; mv "$3.old" "$3"; fi',
+    'rm -rf "$(dirname "$(dirname "$2")")"',
+    '[ "$4" = 1 ] && /usr/bin/open "$3"',
+  ].join('\n')
+  spawn('/bin/sh', ['-c', script, 'jarvis-update', String(process.pid), staged.app, bundle, relaunch ? '1' : '0'], { detached: true, stdio: 'ignore' }).unref()
+  if (relaunch) quit()
+}
+
+function notify(body) {
+  try {
+    new Notification({ title: NAME, body }).show()
   } catch {}
 }
 
@@ -259,7 +350,10 @@ function quit() {
 
 // ---- start ----
 
-app.on('before-quit', () => (quitting = true))
+app.on('before-quit', () => {
+  quitting = true
+  if (staged) installUpdate(false) // a waiting update goes in as Jarvis quits
+})
 app.on('window-all-closed', () => {}) // stays in the menu bar
 app.on('activate', showMain) // clicking the Dock icon
 
@@ -293,8 +387,8 @@ app.whenReady().then(async () => {
   } catch {}
 
   createMain()
-  setTimeout(checkForUpdate, 30_000)
-  setInterval(checkForUpdate, 24 * 3600_000)
+  setTimeout(checkForUpdate, 60_000)
+  setInterval(checkForUpdate, 6 * 3600_000)
 })
 
 app.on('will-quit', () => globalShortcut.unregisterAll())
