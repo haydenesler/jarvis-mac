@@ -1,7 +1,7 @@
 {
   "name": "jarvis-mac",
   "productName": "Jarvis",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Jarvis for the Mac: the full Jarvis window, from the Jarvis running on your PC, through Tailscale.",
   "main": "main.js",

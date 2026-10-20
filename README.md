@@ -8,6 +8,7 @@ The full Jarvis window on your Mac (settings, cameras, history and all), from th
 - Mac notifications for camera alerts, reminders and approvals while the window is behind;
 - opening at login, from the menu-bar icon.
 - **Your PC** (top bar): your PC's screen, driven with the Mac's mouse, trackpad and keyboard. ⌘ works as Ctrl, two-finger scrolling scrolls, and there are buttons for Start, Switch window, Paste from Mac, the other monitor and full screen. It needs Settings → Remote switched on; pressing Esc twice at the PC stops it.
+- **Jarvis World** (menu-bar menu, or View → Jarvis World, ⌘⇧Y): Jarvis drawn as a city that lights up live as it works, in its own window. The PC's Jarvis needs `/world` (added October 2026).
 
 ## Install
 

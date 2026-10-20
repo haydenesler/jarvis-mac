@@ -132,6 +132,44 @@ function loadJarvis() {
   main.loadURL(`${origin()}/`)
 }
 
+// Jarvis World (/world on the PC): Jarvis drawn as a city that lights up as it works, in a
+// window of its own. Its requests carry this Mac's key like the main window's (see
+// onBeforeSendHeaders), so the PC sends it the live feed.
+let world = null
+function openWorld() {
+  if (!prefs.address || !deskKey()) return showMain()
+  if (world && !world.isDestroyed()) {
+    if (world.isMinimized()) world.restore()
+    return world.focus()
+  }
+  world = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 420,
+    minHeight: 520,
+    title: `${NAME} World`,
+    backgroundColor: '#0a0a0f',
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+  })
+  world.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
+  })
+  world.webContents.on('will-navigate', (event, url) => {
+    if (ours(url)) return
+    event.preventDefault()
+    openExternal(url)
+  })
+  world.webContents.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return
+    const page = `<body style="margin:0;height:100vh;display:grid;place-items:center;background:#0a0a0f;color:#9495a4;font:15px system-ui">
+      <p>Couldn’t reach Jarvis World on the PC. Check the PC is on and Tailscale is connected, then close this window and open it again.</p></body>`
+    world.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`)
+  })
+  world.on('closed', () => (world = null))
+  world.loadURL(`${origin()}/world`)
+}
+
 function showMain() {
   if (!main) return
   if (main.isMinimized()) main.restore()
@@ -210,6 +248,7 @@ function buildTrayMenu() {
     Menu.buildFromTemplate([
       { label: `Open ${NAME}`, click: showMain },
       { label: `Talk now    ${shortcut}`, click: talkNow },
+      { label: `${NAME} World`, click: openWorld },
       ...(staged ? [{ type: 'separator' }, { label: `Restart to update to ${staged.version}`, click: () => installUpdate(true) }] : update ? [{ type: 'separator' }, { label: `Download ${NAME} ${update.version}`, click: () => openExternal(update.url) }] : []),
       { type: 'separator' },
       { label: 'Open at login', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, enabled: app.isPackaged, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
@@ -226,7 +265,7 @@ function buildAppMenu() {
     Menu.buildFromTemplate([
       { role: 'appMenu', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { label: `Quit ${NAME}`, accelerator: 'Command+Q', click: quit }] },
       { role: 'editMenu' },
-      { label: 'View', submenu: [{ label: 'Reload', accelerator: 'Command+R', click: loadJarvis }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] },
+      { label: 'View', submenu: [{ label: 'Reload', accelerator: 'Command+R', click: loadJarvis }, { label: `${NAME} World`, accelerator: 'Command+Shift+Y', click: openWorld }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] },
       { role: 'windowMenu' },
     ]),
   )
